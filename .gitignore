@@ -20,7 +20,6 @@ src/paraformer_v2/_ctc_alignment_cython.c
 
 # Experiment outputs and downloaded data
 data/
-runs/
 
 # Editor/OS noise
 .DS_Store

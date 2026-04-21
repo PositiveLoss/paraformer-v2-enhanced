@@ -1,0 +1,12 @@
+{
+  "device": "cpu",
+  "batch_size": 4,
+  "time_steps": 96,
+  "vocab_size": 33,
+  "target_len": 24,
+  "repeats": 20,
+  "outputs_match": true,
+  "python_seconds_per_run": 0.9995570490980754,
+  "cython_seconds_per_run": 0.0001408156502293423,
+  "speedup": 7098.3377733236775
+}

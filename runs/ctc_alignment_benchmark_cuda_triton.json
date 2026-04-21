@@ -1,0 +1,16 @@
+{
+  "device": "cuda",
+  "batch_size": 4,
+  "time_steps": 96,
+  "vocab_size": 33,
+  "target_len": 24,
+  "repeats": 20,
+  "outputs_match": true,
+  "python_seconds_per_run": 4.077628492598888,
+  "cython_seconds_per_run": 0.0002825150004355237,
+  "speedup": 14433.316766588805,
+  "triton_outputs_match": true,
+  "triton_seconds_per_run": 0.00017486760043539107,
+  "triton_speedup_vs_python": 23318.376202602856,
+  "triton_speedup_vs_cython": 1.6155937391038053
+}

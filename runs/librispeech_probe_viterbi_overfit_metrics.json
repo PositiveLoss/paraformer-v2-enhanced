@@ -1,0 +1,123 @@
+{
+  "probe": "tiny-librispeech",
+  "url": "dev-clean",
+  "device": "cuda",
+  "dataset_size": 4,
+  "train_size": 3,
+  "eval_size": 1,
+  "epochs_requested": 40,
+  "updates": 120,
+  "alignment_mode": "viterbi",
+  "eval_on_train": true,
+  "elapsed_seconds": 116.685,
+  "config": {
+    "input_dim": 80,
+    "vocab_size": 28,
+    "encoder_dim": 96,
+    "decoder_dim": 96,
+    "encoder_layers": 3,
+    "decoder_layers": 2,
+    "encoder_ff_dim": 384,
+    "decoder_ff_dim": 384,
+    "attention_heads": 4,
+    "conv_kernel_size": 15,
+    "dropout": 0.1,
+    "blank_id": null
+  },
+  "history_tail": [
+    {
+      "epoch": 36,
+      "step": 2,
+      "loss": 1.9514789581298828,
+      "ctc_loss": 0.6426387429237366,
+      "ce_loss": 1.3088401556015015
+    },
+    {
+      "epoch": 37,
+      "step": 0,
+      "loss": 1.6590490341186523,
+      "ctc_loss": 0.4598880708217621,
+      "ce_loss": 1.1991609334945679
+    },
+    {
+      "epoch": 37,
+      "step": 1,
+      "loss": 1.5235912799835205,
+      "ctc_loss": 0.4983622431755066,
+      "ce_loss": 1.0252289772033691
+    },
+    {
+      "epoch": 37,
+      "step": 2,
+      "loss": 1.7962899208068848,
+      "ctc_loss": 0.5955809950828552,
+      "ce_loss": 1.2007089853286743
+    },
+    {
+      "epoch": 38,
+      "step": 0,
+      "loss": 1.4655065536499023,
+      "ctc_loss": 0.4452346861362457,
+      "ce_loss": 1.020271897315979
+    },
+    {
+      "epoch": 38,
+      "step": 1,
+      "loss": 1.699131965637207,
+      "ctc_loss": 0.5797962546348572,
+      "ce_loss": 1.119335651397705
+    },
+    {
+      "epoch": 38,
+      "step": 2,
+      "loss": 1.3480889797210693,
+      "ctc_loss": 0.45372632145881653,
+      "ce_loss": 0.8943626880645752
+    },
+    {
+      "epoch": 39,
+      "step": 0,
+      "loss": 1.331833004951477,
+      "ctc_loss": 0.4065171182155609,
+      "ce_loss": 0.9253158569335938
+    },
+    {
+      "epoch": 39,
+      "step": 1,
+      "loss": 1.5598556995391846,
+      "ctc_loss": 0.5416796803474426,
+      "ce_loss": 1.0181760787963867
+    },
+    {
+      "epoch": 39,
+      "step": 2,
+      "loss": 1.2204903364181519,
+      "ctc_loss": 0.44007939100265503,
+      "ce_loss": 0.7804109454154968
+    }
+  ],
+  "metrics": {
+    "ctc_wer": 0.3157894736842105,
+    "decoder_wer": 0.631578947368421,
+    "ctc_cer": 0.09411764705882353,
+    "decoder_cer": 0.21176470588235294,
+    "examples": [
+      {
+        "ref": "he doesn't work at all",
+        "ctc": "he dosn't work at all",
+        "decoder": "he  osn't work at all"
+      },
+      {
+        "ref": "by harry quilter m a",
+        "ctc": "by harry quilter m",
+        "decoder": "hy harry builter b"
+      },
+      {
+        "ref": "i hope he doesn't work too hard said shaggy",
+        "ctc": "h hoe he doesn't ork too hard said shay",
+        "decoder": "h hoe he  oesr't oro too har  sao  shay"
+      }
+    ]
+  },
+  "interpretation": "Tiny probe only. Use it to catch pipeline failures and rough loss/decoding behavior; do not compare these metrics to paper-scale LibriSpeech results."
+}

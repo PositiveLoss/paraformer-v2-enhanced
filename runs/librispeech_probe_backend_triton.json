@@ -1,0 +1,75 @@
+{
+  "probe": "tiny-librispeech",
+  "url": "dev-clean",
+  "device": "cuda",
+  "dataset_size": 4,
+  "train_size": 3,
+  "eval_size": 1,
+  "epochs_requested": 1,
+  "updates": 3,
+  "alignment_mode": "viterbi",
+  "alignment_backend": "triton",
+  "eval_on_train": true,
+  "elapsed_seconds": 5.182,
+  "config": {
+    "input_dim": 80,
+    "vocab_size": 28,
+    "encoder_dim": 96,
+    "decoder_dim": 96,
+    "encoder_layers": 3,
+    "decoder_layers": 2,
+    "encoder_ff_dim": 384,
+    "decoder_ff_dim": 384,
+    "attention_heads": 4,
+    "conv_kernel_size": 15,
+    "dropout": 0.1,
+    "blank_id": null
+  },
+  "history_tail": [
+    {
+      "epoch": 0,
+      "step": 0,
+      "loss": 11.190864562988281,
+      "ctc_loss": 7.519056797027588,
+      "ce_loss": 3.6718082427978516
+    },
+    {
+      "epoch": 0,
+      "step": 1,
+      "loss": 7.8119001388549805,
+      "ctc_loss": 4.417261600494385,
+      "ce_loss": 3.394638776779175
+    },
+    {
+      "epoch": 0,
+      "step": 2,
+      "loss": 7.091261863708496,
+      "ctc_loss": 3.8064117431640625,
+      "ce_loss": 3.2848503589630127
+    }
+  ],
+  "metrics": {
+    "ctc_wer": 1.0,
+    "decoder_wer": 1.0,
+    "ctc_cer": 1.0,
+    "decoder_cer": 0.9764705882352941,
+    "examples": [
+      {
+        "ref": "he doesn't work at all",
+        "ctc": "",
+        "decoder": "d"
+      },
+      {
+        "ref": "by harry quilter m a",
+        "ctc": "",
+        "decoder": "d"
+      },
+      {
+        "ref": "i hope he doesn't work too hard said shaggy",
+        "ctc": "",
+        "decoder": "d"
+      }
+    ]
+  },
+  "interpretation": "Tiny probe only. Use it to catch pipeline failures and rough loss/decoding behavior; do not compare these metrics to paper-scale LibriSpeech results."
+}

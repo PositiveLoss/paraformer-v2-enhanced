@@ -1,0 +1,12 @@
+{
+  "device": "cuda",
+  "batch_size": 4,
+  "time_steps": 96,
+  "vocab_size": 33,
+  "target_len": 24,
+  "repeats": 20,
+  "outputs_match": true,
+  "python_seconds_per_run": 4.196791201049928,
+  "cython_seconds_per_run": 0.0002905167522840202,
+  "speedup": 14445.952490020218
+}

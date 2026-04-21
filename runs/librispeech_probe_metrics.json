@@ -1,0 +1,98 @@
+{
+  "probe": "tiny-librispeech",
+  "url": "dev-clean",
+  "device": "cuda",
+  "dataset_size": 16,
+  "train_size": 12,
+  "eval_size": 4,
+  "epochs_requested": 1,
+  "updates": 6,
+  "elapsed_seconds": 47.597,
+  "config": {
+    "input_dim": 80,
+    "vocab_size": 28,
+    "encoder_dim": 96,
+    "decoder_dim": 96,
+    "encoder_layers": 3,
+    "decoder_layers": 2,
+    "encoder_ff_dim": 384,
+    "decoder_ff_dim": 384,
+    "attention_heads": 4,
+    "conv_kernel_size": 15,
+    "dropout": 0.1,
+    "blank_id": null
+  },
+  "history_tail": [
+    {
+      "epoch": 0,
+      "step": 0,
+      "loss": 7.914203643798828,
+      "ctc_loss": 4.518967628479004,
+      "ce_loss": 3.395235776901245
+    },
+    {
+      "epoch": 0,
+      "step": 1,
+      "loss": 6.643715858459473,
+      "ctc_loss": 3.5403151512145996,
+      "ce_loss": 3.103400945663452
+    },
+    {
+      "epoch": 0,
+      "step": 2,
+      "loss": 7.385927200317383,
+      "ctc_loss": 4.212765693664551,
+      "ce_loss": 3.173161506652832
+    },
+    {
+      "epoch": 0,
+      "step": 3,
+      "loss": 6.402752876281738,
+      "ctc_loss": 3.3086001873016357,
+      "ce_loss": 3.0941526889801025
+    },
+    {
+      "epoch": 0,
+      "step": 4,
+      "loss": 6.303184509277344,
+      "ctc_loss": 3.2083897590637207,
+      "ce_loss": 3.094794988632202
+    },
+    {
+      "epoch": 0,
+      "step": 5,
+      "loss": 6.236204147338867,
+      "ctc_loss": 3.164581298828125,
+      "ce_loss": 3.0716230869293213
+    }
+  ],
+  "metrics": {
+    "ctc_wer": 1.0,
+    "decoder_wer": 1.0,
+    "ctc_cer": 1.0,
+    "decoder_cer": 1.0,
+    "examples": [
+      {
+        "ref": "near the fire and the ornaments fred brought home from india on the mantel board",
+        "ctc": "",
+        "decoder": ""
+      },
+      {
+        "ref": "i hope he doesn't work too hard said shaggy",
+        "ctc": "",
+        "decoder": ""
+      },
+      {
+        "ref": "he doesn't work at all",
+        "ctc": "",
+        "decoder": ""
+      },
+      {
+        "ref": "by harry quilter m a",
+        "ctc": "",
+        "decoder": ""
+      }
+    ]
+  },
+  "interpretation": "Tiny probe only. Use it to catch pipeline failures and rough loss/decoding behavior; do not compare these metrics to paper-scale LibriSpeech results."
+}
