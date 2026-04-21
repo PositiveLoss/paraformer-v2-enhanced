@@ -14,7 +14,12 @@ import torchaudio
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 
-from paraformer_v2 import ParaformerV2, ParaformerV2Config
+from paraformer_v2 import (
+    BetterParaformerV2,
+    BetterParaformerV2Config,
+    ParaformerV2,
+    ParaformerV2Config,
+)
 
 
 VOCAB = " abcdefghijklmnopqrstuvwxyz'"
@@ -205,12 +210,17 @@ def main() -> None:
     parser.add_argument("--time-cap-seconds", type=float, default=900.0)
     parser.add_argument("--alignment-mode", choices=["viterbi", "uniform"], default="viterbi")
     parser.add_argument("--alignment-backend", choices=["auto", "python", "cython", "triton"], default="auto")
+    parser.add_argument("--architecture", choices=["baseline", "better"], default="baseline")
     parser.add_argument("--eval-on-train", action="store_true")
     parser.add_argument("--progress-every", type=int, default=10)
+    parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--output", type=Path, default=Path("runs/librispeech_probe_metrics.json"))
     args = parser.parse_args()
 
     started = time.time()
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataset = TinyLibriSpeech(
         args.data_root,
@@ -232,19 +242,34 @@ def main() -> None:
     train_loader = DataLoader(train_set, shuffle=True, **loader_kwargs)
     eval_loader = DataLoader(train_set if args.eval_on_train else eval_set, shuffle=False, **loader_kwargs)
 
-    config = ParaformerV2Config(
-        input_dim=80,
-        vocab_size=len(VOCAB),
-        encoder_dim=96,
-        decoder_dim=96,
-        encoder_layers=3,
-        decoder_layers=2,
-        encoder_ff_dim=384,
-        decoder_ff_dim=384,
-        attention_heads=4,
-        dropout=0.1,
-    )
-    model = ParaformerV2(config).to(device)
+    if args.architecture == "better":
+        config = BetterParaformerV2Config(
+            input_dim=80,
+            vocab_size=len(VOCAB),
+            encoder_dim=96,
+            decoder_dim=96,
+            encoder_layers=3,
+            decoder_layers=2,
+            encoder_ff_dim=384,
+            decoder_ff_dim=384,
+            attention_heads=4,
+            dropout=0.1,
+        )
+        model = BetterParaformerV2(config).to(device)
+    else:
+        config = ParaformerV2Config(
+            input_dim=80,
+            vocab_size=len(VOCAB),
+            encoder_dim=96,
+            decoder_dim=96,
+            encoder_layers=3,
+            decoder_layers=2,
+            encoder_ff_dim=384,
+            decoder_ff_dim=384,
+            attention_heads=4,
+            dropout=0.1,
+        )
+        model = ParaformerV2(config).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=1e-2)
 
     history = []
@@ -272,6 +297,16 @@ def main() -> None:
                     "loss": float(losses["loss"].detach().cpu()),
                     "ctc_loss": float(losses["ctc_loss"].cpu()),
                     "ce_loss": float(losses["ce_loss"].cpu()),
+                    **(
+                        {"shallow_ctc_loss": float(losses["shallow_ctc_loss"].cpu())}
+                        if "shallow_ctc_loss" in losses
+                        else {}
+                    ),
+                    **(
+                        {"boundary_loss": float(losses["boundary_loss"].cpu())}
+                        if "boundary_loss" in losses
+                        else {}
+                    ),
                 }
             )
             if args.progress_every > 0 and len(history) % args.progress_every == 0:
@@ -289,9 +324,11 @@ def main() -> None:
         "eval_size": len(eval_set),
         "epochs_requested": args.epochs,
         "updates": len(history),
+        "architecture": args.architecture,
         "alignment_mode": args.alignment_mode,
         "alignment_backend": args.alignment_backend,
         "eval_on_train": args.eval_on_train,
+        "seed": args.seed,
         "elapsed_seconds": round(time.time() - started, 3),
         "config": asdict(config),
         "history_tail": history[-10:],
