@@ -23,10 +23,16 @@ except ImportError:
 
 
 ROOT = Path(__file__).parent
+
+
+def _relpath(path: Path) -> str:
+    return path.relative_to(ROOT).as_posix()
+
+
 CYTHON_EXTENSIONS = [
     Extension(
         "paraformer_v2._ctc_alignment_cython",
-        [str(ROOT / "src" / "paraformer_v2" / "_ctc_alignment_cython.pyx")],
+        [_relpath(ROOT / "src" / "paraformer_v2" / "_ctc_alignment_cython.pyx")],
         include_dirs=[np.get_include()],
     )
 ]
@@ -82,8 +88,8 @@ if _should_build_cuda_extension():
         CUDAExtension(
             "paraformer_v2._ctc_alignment_cuda",
             [
-                str(ROOT / "src" / "paraformer_v2" / "_ctc_alignment_cuda.cpp"),
-                str(ROOT / "src" / "paraformer_v2" / "_ctc_alignment_cuda_kernel.cu"),
+                _relpath(ROOT / "src" / "paraformer_v2" / "_ctc_alignment_cuda.cpp"),
+                _relpath(ROOT / "src" / "paraformer_v2" / "_ctc_alignment_cuda_kernel.cu"),
             ],
             extra_compile_args={
                 "cxx": ["-O3"],
