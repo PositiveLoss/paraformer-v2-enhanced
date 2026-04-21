@@ -289,6 +289,15 @@ def resolve_amp_mode(device: torch.device, amp_mode: str) -> tuple[bool, torch.d
     return True, dtype, resolved
 
 
+def compile_model(model: torch.nn.Module, compile_mode: str) -> tuple[torch.nn.Module, str]:
+    if compile_mode == "off":
+        return model, "off"
+    if not hasattr(torch, "compile"):
+        raise RuntimeError("torch.compile is not available in this PyTorch build.")
+    resolved_mode = None if compile_mode == "default" else compile_mode
+    return torch.compile(model, mode=resolved_mode), compile_mode
+
+
 def evaluate(
     model: ParaformerV2,
     loader: DataLoader,
@@ -355,11 +364,19 @@ def main() -> None:
     parser.add_argument("--sentencepiece-prefix", type=Path, default=None)
     parser.add_argument("--num-workers", type=int, default=min(8, os.cpu_count() or 1))
     parser.add_argument("--amp", choices=["auto", "off", "fp16", "bf16"], default="auto")
+    parser.add_argument("--grad-accum-steps", type=int, default=1)
+    parser.add_argument(
+        "--torch-compile",
+        choices=["off", "default", "reduce-overhead", "max-autotune"],
+        default="off",
+    )
     parser.add_argument("--eval-on-train", action="store_true")
     parser.add_argument("--progress-every", type=int, default=10)
     parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--output", type=Path, default=Path("runs/librispeech_probe_metrics.json"))
     args = parser.parse_args()
+    if args.grad_accum_steps < 1:
+        raise ValueError("--grad-accum-steps must be at least 1.")
 
     started = time.time()
     torch.manual_seed(args.seed)
@@ -432,16 +449,20 @@ def main() -> None:
             dropout=0.1,
         )
         model = ParaformerV2(config).to(device)
+    model, resolved_compile = compile_model(model, args.torch_compile)
     optimizer = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=1e-2)
     scaler = torch.amp.GradScaler(device.type, enabled=amp_enabled and amp_dtype == torch.float16)
 
     history = []
+    optimizer_steps = 0
+    accumulation_index = 0
     for epoch in range(args.epochs):
         model.train()
         for step, batch in enumerate(train_loader):
             if time.time() - started > args.time_cap_seconds:
                 break
-            optimizer.zero_grad(set_to_none=True)
+            if accumulation_index == 0:
+                optimizer.zero_grad(set_to_none=True)
             features = batch["features"].to(device, non_blocking=True)
             feature_lengths = batch["feature_lengths"].to(device, non_blocking=True)
             targets = batch["targets"].to(device, non_blocking=True)
@@ -459,16 +480,11 @@ def main() -> None:
                     alignment_mode=args.alignment_mode,
                     alignment_backend=args.alignment_backend,
                 )
+            loss_for_backward = losses["loss"] / args.grad_accum_steps
             if scaler.is_enabled():
-                scaler.scale(losses["loss"]).backward()
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
-                scaler.step(optimizer)
-                scaler.update()
+                scaler.scale(loss_for_backward).backward()
             else:
-                losses["loss"].backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
-                optimizer.step()
+                loss_for_backward.backward()
             history.append(
                 {
                     "epoch": epoch,
@@ -488,6 +504,19 @@ def main() -> None:
                     ),
                 }
             )
+            accumulation_index += 1
+            should_step = accumulation_index == args.grad_accum_steps or step == len(train_loader) - 1
+            if should_step:
+                if scaler.is_enabled():
+                    scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+                if scaler.is_enabled():
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    optimizer.step()
+                optimizer_steps += 1
+                accumulation_index = 0
             if args.progress_every > 0 and len(history) % args.progress_every == 0:
                 print(json.dumps(history[-1]), flush=True)
         if time.time() - started > args.time_cap_seconds:
@@ -503,10 +532,13 @@ def main() -> None:
         "eval_size": len(eval_set),
         "epochs_requested": args.epochs,
         "updates": len(history),
+        "optimizer_steps": optimizer_steps,
         "architecture": args.architecture,
         "tokenizer": tokenizer.info(),
         "num_workers": args.num_workers,
         "amp": resolved_amp,
+        "grad_accum_steps": args.grad_accum_steps,
+        "torch_compile": resolved_compile,
         "alignment_mode": args.alignment_mode,
         "alignment_backend": args.alignment_backend,
         "eval_on_train": args.eval_on_train,
