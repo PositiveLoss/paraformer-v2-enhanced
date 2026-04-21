@@ -1,0 +1,27 @@
+# Python caches and local tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Local virtual environments
+.venv/
+.venv-build/
+venv/
+
+# Native/Cython build outputs
+build/
+dist/
+*.so
+*.pyd
+*.dll
+*.dylib
+src/paraformer_v2/_ctc_alignment_cython.c
+
+# Experiment outputs and downloaded data
+data/
+runs/
+
+# Editor/OS noise
+.DS_Store
+Thumbs.db
