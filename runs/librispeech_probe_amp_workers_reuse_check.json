@@ -1,0 +1,53 @@
+{
+  "probe": "tiny-librispeech",
+  "url": "dev-clean",
+  "device": "cuda",
+  "dataset_size": 4,
+  "train_size": 3,
+  "eval_size": 1,
+  "epochs_requested": 0,
+  "updates": 0,
+  "architecture": "baseline",
+  "tokenizer": {
+    "type": "sentencepiece",
+    "vocab_size": 48,
+    "model_path": "runs/librispeech_probe_spm_reuse_smoke.model",
+    "reused_existing_model": true
+  },
+  "num_workers": 2,
+  "amp": "bf16",
+  "alignment_mode": "viterbi",
+  "alignment_backend": "auto",
+  "eval_on_train": false,
+  "seed": 13,
+  "elapsed_seconds": 3.299,
+  "config": {
+    "input_dim": 80,
+    "vocab_size": 48,
+    "encoder_dim": 96,
+    "decoder_dim": 96,
+    "encoder_layers": 3,
+    "decoder_layers": 2,
+    "encoder_ff_dim": 384,
+    "decoder_ff_dim": 384,
+    "attention_heads": 4,
+    "conv_kernel_size": 15,
+    "dropout": 0.1,
+    "blank_id": null
+  },
+  "history_tail": [],
+  "metrics": {
+    "ctc_wer": 1.0,
+    "decoder_wer": 7.5,
+    "ctc_cer": 1.3333333333333333,
+    "decoder_cer": 3.074074074074074,
+    "examples": [
+      {
+        "ref": "not exactly returned kaliko",
+        "ctc": "esbebeslesleslblbesbesbesboresoesleboreseb",
+        "decoder": "he he he he he he he he he he he he he he he he he he he he he he he he he he he he he he"
+      }
+    ]
+  },
+  "interpretation": "Tiny probe only. Use it to catch pipeline failures and rough loss/decoding behavior; do not compare these metrics to paper-scale LibriSpeech results."
+}

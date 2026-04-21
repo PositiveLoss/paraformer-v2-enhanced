@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import time
 from dataclasses import asdict
@@ -69,31 +70,41 @@ class SentencePieceTokenizer(TextTokenizer):
         if not texts:
             raise RuntimeError("Cannot train SentencePiece tokenizer without texts.")
         self._tempdir: TemporaryDirectory[str] | None = None
+        self.reused_existing_model = False
         if model_prefix is None:
             self._tempdir = TemporaryDirectory(prefix="librispeech_probe_spm_")
             prefix = Path(self._tempdir.name) / "tokenizer"
         else:
             prefix = model_prefix
             prefix.parent.mkdir(parents=True, exist_ok=True)
-        training_input = prefix.parent / f"{prefix.name}_training.txt"
-        training_input.write_text("\n".join(texts) + "\n", encoding="utf-8")
-        spm.SentencePieceTrainer.train(
-            input=str(training_input),
-            model_prefix=str(prefix),
-            vocab_size=vocab_size,
-            model_type=model_type,
-            character_coverage=1.0,
-            bos_id=-1,
-            eos_id=-1,
-            pad_id=-1,
-            unk_piece="<unk>",
-            hard_vocab_limit=False,
-            train_extremely_large_corpus=False,
-            shuffle_input_sentence=False,
-            normalization_rule_name="identity",
-        )
         self.model_path = prefix.with_suffix(".model")
-        self.processor = spm.SentencePieceProcessor(model_file=str(self.model_path))
+        if self.model_path.exists():
+            self.reused_existing_model = True
+        else:
+            training_input = prefix.parent / f"{prefix.name}_training.txt"
+            training_input.write_text("\n".join(texts) + "\n", encoding="utf-8")
+            spm.SentencePieceTrainer.train(
+                input=str(training_input),
+                model_prefix=str(prefix),
+                vocab_size=vocab_size,
+                model_type=model_type,
+                character_coverage=1.0,
+                bos_id=-1,
+                eos_id=-1,
+                pad_id=-1,
+                unk_piece="<unk>",
+                hard_vocab_limit=False,
+                train_extremely_large_corpus=False,
+                shuffle_input_sentence=False,
+                normalization_rule_name="identity",
+            )
+        self._processor: spm.SentencePieceProcessor | None = None
+
+    @property
+    def processor(self) -> spm.SentencePieceProcessor:
+        if self._processor is None:
+            self._processor = spm.SentencePieceProcessor(model_file=str(self.model_path))
+        return self._processor
 
     def encode(self, text: str) -> list[int]:
         return list(self.processor.encode(text, out_type=int))
@@ -112,6 +123,7 @@ class SentencePieceTokenizer(TextTokenizer):
             "type": "sentencepiece",
             "vocab_size": self.vocab_size,
             "model_path": str(self.model_path),
+            "reused_existing_model": self.reused_existing_model,
         }
 
 
@@ -142,17 +154,18 @@ class TinyLibriSpeech(Dataset):
             text = normalize_text(transcript)
             if not text:
                 continue
-            waveform, sample_rate = load_flac_with_ffmpeg(audio_path)
-            seconds = waveform.size(-1) / sample_rate
+            sample_rate, frame_count = load_audio_metadata(audio_path)
+            resampled_frames = int(round(frame_count * 16_000 / sample_rate))
+            seconds = resampled_frames / 16_000
             if seconds > max_seconds:
                 continue
             token_count = len(text)
-            mel_frames = max(0, (waveform.size(-1) - 400) // 160 + 1)
+            mel_frames = max(0, (resampled_frames - 400) // 160 + 1)
             encoder_frames = (mel_frames + 3) // 4
             # The model subsamples by 4; keep CTC alignment comfortably feasible.
             if encoder_frames <= token_count * 2 + 1:
                 continue
-            self.items.append((waveform, sample_rate, text))
+            self.items.append((audio_path, text))
             if len(self.items) >= max_utterances:
                 break
         if not self.items:
@@ -164,7 +177,29 @@ class TinyLibriSpeech(Dataset):
         return len(self.items)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, int, str]:
-        return self.items[index]
+        audio_path, text = self.items[index]
+        waveform, sample_rate = load_flac_with_ffmpeg(audio_path)
+        return waveform, sample_rate, text
+
+
+class ProbeCollate:
+    def __init__(self, tokenizer: TextTokenizer) -> None:
+        self.tokenizer = tokenizer
+        self.extractor: FeatureExtractor | None = None
+
+    def __call__(self, batch: list[tuple[torch.Tensor, int, str]]) -> dict[str, torch.Tensor | list[str]]:
+        if self.extractor is None:
+            self.extractor = FeatureExtractor()
+        features = [self.extractor(waveform, sample_rate) for waveform, sample_rate, _ in batch]
+        texts = [text for _, _, text in batch]
+        targets = [torch.tensor(self.tokenizer.encode(text), dtype=torch.long) for text in texts]
+        return {
+            "features": pad_sequence(features, batch_first=True),
+            "feature_lengths": torch.tensor([feat.size(0) for feat in features], dtype=torch.long),
+            "targets": pad_sequence(targets, batch_first=True),
+            "target_lengths": torch.tensor([target.size(0) for target in targets], dtype=torch.long),
+            "texts": texts,
+        }
 
 
 def load_flac_with_ffmpeg(path: Path, sample_rate: int = 16_000) -> tuple[torch.Tensor, int]:
@@ -187,6 +222,25 @@ def load_flac_with_ffmpeg(path: Path, sample_rate: int = 16_000) -> tuple[torch.
     proc = subprocess.run(cmd, check=True, stdout=subprocess.PIPE)
     waveform = torch.frombuffer(bytearray(proc.stdout), dtype=torch.float32).unsqueeze(0)
     return waveform, sample_rate
+
+
+def load_audio_metadata(path: Path) -> tuple[int, int]:
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "a:0",
+        "-show_entries",
+        "stream=sample_rate,duration_ts",
+        "-of",
+        "json",
+        str(path),
+    ]
+    proc = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, text=True)
+    payload = json.loads(proc.stdout)
+    stream = payload["streams"][0]
+    return int(stream["sample_rate"]), int(stream["duration_ts"])
 
 
 def normalize_text(text: str) -> str:
@@ -225,22 +279,14 @@ class FeatureExtractor:
         return torch.log(mel.clamp_min(1e-5))
 
 
-def make_collate(tokenizer: TextTokenizer) -> callable:
-    extractor = FeatureExtractor()
-
-    def collate(batch: list[tuple[torch.Tensor, int, str]]) -> dict[str, torch.Tensor | list[str]]:
-        features = [extractor(waveform, sample_rate) for waveform, sample_rate, _ in batch]
-        texts = [text for _, _, text in batch]
-        targets = [torch.tensor(tokenizer.encode(text), dtype=torch.long) for text in texts]
-        return {
-            "features": pad_sequence(features, batch_first=True),
-            "feature_lengths": torch.tensor([feat.size(0) for feat in features], dtype=torch.long),
-            "targets": pad_sequence(targets, batch_first=True),
-            "target_lengths": torch.tensor([target.size(0) for target in targets], dtype=torch.long),
-            "texts": texts,
-        }
-
-    return collate
+def resolve_amp_mode(device: torch.device, amp_mode: str) -> tuple[bool, torch.dtype | None, str]:
+    if device.type != "cuda" or amp_mode == "off":
+        return False, None, "off"
+    resolved = amp_mode
+    if resolved == "auto":
+        resolved = "bf16" if torch.cuda.is_bf16_supported() else "fp16"
+    dtype = torch.bfloat16 if resolved == "bf16" else torch.float16
+    return True, dtype, resolved
 
 
 def evaluate(
@@ -248,6 +294,8 @@ def evaluate(
     loader: DataLoader,
     device: torch.device,
     tokenizer: TextTokenizer,
+    amp_enabled: bool,
+    amp_dtype: torch.dtype | None,
 ) -> dict[str, float | list[dict[str, str]]]:
     model.eval()
     refs: list[str] = []
@@ -257,9 +305,14 @@ def evaluate(
     blank_id = model.config.resolved_blank_id
     with torch.no_grad():
         for batch in loader:
-            features = batch["features"].to(device)
-            feature_lengths = batch["feature_lengths"].to(device)
-            out = model(features, feature_lengths)
+            features = batch["features"].to(device, non_blocking=True)
+            feature_lengths = batch["feature_lengths"].to(device, non_blocking=True)
+            with torch.amp.autocast(
+                device_type=device.type,
+                enabled=amp_enabled,
+                dtype=amp_dtype,
+            ):
+                out = model(features, feature_lengths)
             ctc_ids = out["ctc_log_probs"].argmax(dim=-1).cpu()
             decoder_ids = out["decoder_logits"].argmax(dim=-1).cpu()
             query_lengths = out["query_lengths"].cpu()
@@ -300,6 +353,8 @@ def main() -> None:
     parser.add_argument("--sentencepiece-vocab-size", type=int, default=48)
     parser.add_argument("--sentencepiece-model-type", choices=["unigram", "bpe"], default="bpe")
     parser.add_argument("--sentencepiece-prefix", type=Path, default=None)
+    parser.add_argument("--num-workers", type=int, default=min(8, os.cpu_count() or 1))
+    parser.add_argument("--amp", choices=["auto", "off", "fp16", "bf16"], default="auto")
     parser.add_argument("--eval-on-train", action="store_true")
     parser.add_argument("--progress-every", type=int, default=10)
     parser.add_argument("--seed", type=int, default=13)
@@ -327,7 +382,7 @@ def main() -> None:
     if len(eval_set) == 0:
         eval_set = train_set
 
-    train_texts = [dataset[index][2] for index in train_set.indices]
+    train_texts = [dataset.items[index][1] for index in train_set.indices]
     if args.tokenizer == "sentencepiece":
         tokenizer: TextTokenizer = SentencePieceTokenizer(
             train_texts,
@@ -338,7 +393,14 @@ def main() -> None:
     else:
         tokenizer = CharTokenizer()
 
-    loader_kwargs = {"batch_size": args.batch_size, "collate_fn": make_collate(tokenizer)}
+    amp_enabled, amp_dtype, resolved_amp = resolve_amp_mode(device, args.amp)
+    loader_kwargs = {
+        "batch_size": args.batch_size,
+        "collate_fn": ProbeCollate(tokenizer),
+        "num_workers": args.num_workers,
+        "pin_memory": device.type == "cuda",
+        "persistent_workers": args.num_workers > 0,
+    }
     train_loader = DataLoader(train_set, shuffle=True, **loader_kwargs)
     eval_loader = DataLoader(train_set if args.eval_on_train else eval_set, shuffle=False, **loader_kwargs)
 
@@ -371,6 +433,7 @@ def main() -> None:
         )
         model = ParaformerV2(config).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=1e-2)
+    scaler = torch.amp.GradScaler(device.type, enabled=amp_enabled and amp_dtype == torch.float16)
 
     history = []
     for epoch in range(args.epochs):
@@ -379,17 +442,33 @@ def main() -> None:
             if time.time() - started > args.time_cap_seconds:
                 break
             optimizer.zero_grad(set_to_none=True)
-            losses = model.loss(
-                batch["features"].to(device),
-                batch["feature_lengths"].to(device),
-                batch["targets"].to(device),
-                batch["target_lengths"].to(device),
-                alignment_mode=args.alignment_mode,
-                alignment_backend=args.alignment_backend,
-            )
-            losses["loss"].backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
-            optimizer.step()
+            features = batch["features"].to(device, non_blocking=True)
+            feature_lengths = batch["feature_lengths"].to(device, non_blocking=True)
+            targets = batch["targets"].to(device, non_blocking=True)
+            target_lengths = batch["target_lengths"].to(device, non_blocking=True)
+            with torch.amp.autocast(
+                device_type=device.type,
+                enabled=amp_enabled,
+                dtype=amp_dtype,
+            ):
+                losses = model.loss(
+                    features,
+                    feature_lengths,
+                    targets,
+                    target_lengths,
+                    alignment_mode=args.alignment_mode,
+                    alignment_backend=args.alignment_backend,
+                )
+            if scaler.is_enabled():
+                scaler.scale(losses["loss"]).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                losses["loss"].backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+                optimizer.step()
             history.append(
                 {
                     "epoch": epoch,
@@ -414,7 +493,7 @@ def main() -> None:
         if time.time() - started > args.time_cap_seconds:
             break
 
-    metrics = evaluate(model, eval_loader, device, tokenizer)
+    metrics = evaluate(model, eval_loader, device, tokenizer, amp_enabled, amp_dtype)
     result = {
         "probe": "tiny-librispeech",
         "url": args.url,
@@ -426,6 +505,8 @@ def main() -> None:
         "updates": len(history),
         "architecture": args.architecture,
         "tokenizer": tokenizer.info(),
+        "num_workers": args.num_workers,
+        "amp": resolved_amp,
         "alignment_mode": args.alignment_mode,
         "alignment_backend": args.alignment_backend,
         "eval_on_train": args.eval_on_train,
