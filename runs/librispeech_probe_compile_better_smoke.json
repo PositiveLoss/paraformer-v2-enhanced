@@ -1,0 +1,78 @@
+{
+  "probe": "tiny-librispeech",
+  "url": "dev-clean",
+  "device": "cuda",
+  "dataset_size": 4,
+  "train_size": 3,
+  "eval_size": 1,
+  "epochs_requested": 1,
+  "updates": 2,
+  "optimizer_steps": 2,
+  "architecture": "better",
+  "tokenizer": {
+    "type": "char",
+    "vocab_size": 28
+  },
+  "num_workers": 0,
+  "amp": "bf16",
+  "grad_accum_steps": 1,
+  "torch_compile": "reduce-overhead",
+  "alignment_mode": "viterbi",
+  "alignment_backend": "auto",
+  "eval_on_train": false,
+  "seed": 13,
+  "elapsed_seconds": 29.392,
+  "config": {
+    "input_dim": 80,
+    "vocab_size": 28,
+    "encoder_dim": 96,
+    "decoder_dim": 96,
+    "encoder_layers": 3,
+    "decoder_layers": 2,
+    "encoder_ff_dim": 384,
+    "decoder_ff_dim": 384,
+    "attention_heads": 4,
+    "conv_kernel_size": 15,
+    "dropout": 0.1,
+    "blank_id": null,
+    "shallow_ctc_loss_weight": 0.3,
+    "boundary_loss_weight": 0.1,
+    "refinement_loss_weight": 0.3,
+    "confidence_threshold": 0.55,
+    "low_confidence_threshold": 0.7
+  },
+  "history_tail": [
+    {
+      "epoch": 0,
+      "step": 0,
+      "loss": 13.331279754638672,
+      "ctc_loss": 6.76400089263916,
+      "ce_loss": 3.8668155670166016,
+      "shallow_ctc_loss": 5.575562953948975,
+      "boundary_loss": 0.7217656970024109
+    },
+    {
+      "epoch": 0,
+      "step": 1,
+      "loss": 10.804393768310547,
+      "ctc_loss": 4.838891506195068,
+      "ce_loss": 3.583575487136841,
+      "shallow_ctc_loss": 4.552099704742432,
+      "boundary_loss": 0.6876821517944336
+    }
+  ],
+  "metrics": {
+    "ctc_wer": 1.0,
+    "decoder_wer": 1.0,
+    "ctc_cer": 1.0,
+    "decoder_cer": 1.0,
+    "examples": [
+      {
+        "ref": "not exactly returned kaliko",
+        "ctc": "",
+        "decoder": "v"
+      }
+    ]
+  },
+  "interpretation": "Tiny probe only. Use it to catch pipeline failures and rough loss/decoding behavior; do not compare these metrics to paper-scale LibriSpeech results."
+}

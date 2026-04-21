@@ -8,6 +8,12 @@ from torch.nn import functional as F
 
 from .ctc_alignment import batch_ctc_viterbi_alignments, batch_uniform_alignments
 
+try:
+    dynamo_disable = torch._dynamo.disable
+except AttributeError:
+    def dynamo_disable(fn):  # type: ignore[no-redef]
+        return fn
+
 
 @dataclass(frozen=True)
 class ParaformerV2Config:
@@ -249,14 +255,7 @@ class ParaformerV2(nn.Module):
             blank=self.config.resolved_blank_id,
             zero_infinity=True,
         )
-
-        max_u = int(target_lengths.max().item())
-        decoder_logits = out["decoder_logits"][:, :max_u]
-        ce_mask = lengths_to_padding_mask(target_lengths, max_u)
-        ce_loss = F.cross_entropy(
-            decoder_logits[~ce_mask],
-            targets[:, :max_u][~ce_mask],
-        )
+        ce_loss = masked_cross_entropy(out["decoder_logits"], targets, target_lengths)
         return {
             "loss": ctc_loss + ce_loss,
             "ctc_loss": ctc_loss.detach(),
@@ -264,6 +263,7 @@ class ParaformerV2(nn.Module):
         }
 
 
+@dynamo_disable
 def compress_posteriors(
     posteriors: torch.Tensor,
     alignments: torch.Tensor,
@@ -298,6 +298,21 @@ def compress_posteriors(
     for b, piece in enumerate(pieces):
         padded[b, : piece.size(0)] = piece
     return padded, torch.tensor(piece_lengths, dtype=torch.long, device=posteriors.device)
+
+
+@dynamo_disable
+def masked_cross_entropy(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    target_lengths: torch.Tensor,
+) -> torch.Tensor:
+    max_target = int(target_lengths.max().item())
+    trimmed_logits = logits[:, :max_target]
+    target_mask = lengths_to_padding_mask(target_lengths, max_target)
+    return F.cross_entropy(
+        trimmed_logits[~target_mask],
+        targets[:, :max_target][~target_mask],
+    )
 
 
 def lengths_to_padding_mask(lengths: torch.Tensor, max_len: int) -> torch.Tensor:

@@ -9,6 +9,12 @@ from torch.nn import functional as F
 from .ctc_alignment import batch_ctc_viterbi_alignments, batch_uniform_alignments
 from .model import ConformerBlock, ConvSubsampling, ParaformerV2Config, lengths_to_padding_mask
 
+try:
+    dynamo_disable = torch._dynamo.disable
+except AttributeError:
+    def dynamo_disable(fn):  # type: ignore[no-redef]
+        return fn
+
 
 @dataclass(frozen=True)
 class BetterParaformerV2Config(ParaformerV2Config):
@@ -239,6 +245,7 @@ class BetterParaformerV2(nn.Module):
         }
 
 
+@dynamo_disable
 def compress_confidence_gated_queries(
     shallow_posteriors: torch.Tensor,
     final_posteriors: torch.Tensor,
@@ -315,6 +322,7 @@ def compress_confidence_gated_queries(
     return padded, torch.tensor(piece_lengths, dtype=torch.long, device=shallow_posteriors.device), padded_confidences
 
 
+@dynamo_disable
 def nonblank_segments(labels: torch.Tensor, blank_id: int) -> list[tuple[int, int, int]]:
     segments: list[tuple[int, int, int]] = []
     start = 0
@@ -339,6 +347,7 @@ def build_boundary_targets(alignments: torch.Tensor, lengths: torch.Tensor) -> t
     return targets
 
 
+@dynamo_disable
 def masked_cross_entropy(
     logits: torch.Tensor,
     targets: torch.Tensor,
