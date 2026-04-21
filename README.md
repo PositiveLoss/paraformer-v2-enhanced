@@ -36,6 +36,19 @@ For a short overfit diagnostic that emits recognizable words from real audio:
 PYTHONPATH=src python3 scripts/librispeech_probe.py --url dev-clean --max-utterances 4 --max-seconds 4 --epochs 40 --batch-size 1 --alignment-mode viterbi --alignment-backend auto --eval-on-train --output runs/librispeech_probe_viterbi_overfit_metrics.json
 ```
 
+To switch from the default tiny probe to paper-style model presets, pass:
+
+```bash
+--model-variant small
+--model-variant medium
+--model-variant large
+```
+
+`small` and `large` match the paper table (`256/256` and `512/512` encoder and
+decoder dimensions with `12/6` layers). `medium` is provided here as an
+interpolated preset (`384/384`, `12/6` layers) for scaling experiments between
+those two reported sizes.
+
 That Viterbi overfit run is still only a diagnostic, but it produced word-like
 predictions such as `he osn't work at all` for `he doesn't work at all` and
 `hy harry builter b` for `by harry quilter m a`.

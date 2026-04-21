@@ -38,6 +38,47 @@ class ParaformerV2Config:
     def resolved_blank_id(self) -> int:
         return self.vocab_size if self.blank_id is None else self.blank_id
 
+    @classmethod
+    def from_variant(cls, variant: str, **overrides: int | float | None) -> "ParaformerV2Config":
+        presets = {
+            "small": {
+                "encoder_dim": 256,
+                "decoder_dim": 256,
+                "encoder_layers": 12,
+                "decoder_layers": 6,
+                "encoder_ff_dim": 2048,
+                "decoder_ff_dim": 2048,
+                "attention_heads": 4,
+            },
+            "medium": {
+                "encoder_dim": 384,
+                "decoder_dim": 384,
+                "encoder_layers": 12,
+                "decoder_layers": 6,
+                "encoder_ff_dim": 2048,
+                "decoder_ff_dim": 2048,
+                "attention_heads": 6,
+            },
+            "large": {
+                "encoder_dim": 512,
+                "decoder_dim": 512,
+                "encoder_layers": 12,
+                "decoder_layers": 6,
+                "encoder_ff_dim": 2048,
+                "decoder_ff_dim": 2048,
+                "attention_heads": 8,
+            },
+        }
+        try:
+            preset = presets[variant]
+        except KeyError as exc:
+            choices = ", ".join(sorted(presets))
+            raise ValueError(f"unknown variant: {variant}. Expected one of: {choices}") from exc
+
+        config = dict(preset)
+        config.update({key: value for key, value in overrides.items() if value is not None})
+        return cls(**config)
+
 
 class ConvSubsampling(nn.Module):
     def __init__(self, input_dim: int, output_dim: int) -> None:

@@ -358,6 +358,7 @@ def main() -> None:
     parser.add_argument("--alignment-mode", choices=["viterbi", "uniform"], default="viterbi")
     parser.add_argument("--alignment-backend", choices=["auto", "python", "cython", "triton"], default="auto")
     parser.add_argument("--architecture", choices=["baseline", "better"], default="baseline")
+    parser.add_argument("--model-variant", choices=["tiny", "small", "medium", "large"], default="tiny")
     parser.add_argument("--tokenizer", choices=["char", "sentencepiece"], default="char")
     parser.add_argument("--sentencepiece-vocab-size", type=int, default=48)
     parser.add_argument("--sentencepiece-model-type", choices=["unigram", "bpe"], default="bpe")
@@ -422,32 +423,48 @@ def main() -> None:
     eval_loader = DataLoader(train_set if args.eval_on_train else eval_set, shuffle=False, **loader_kwargs)
 
     if args.architecture == "better":
-        config = BetterParaformerV2Config(
-            input_dim=80,
-            vocab_size=tokenizer.vocab_size,
-            encoder_dim=96,
-            decoder_dim=96,
-            encoder_layers=3,
-            decoder_layers=2,
-            encoder_ff_dim=384,
-            decoder_ff_dim=384,
-            attention_heads=4,
-            dropout=0.1,
-        )
+        if args.model_variant == "tiny":
+            config = BetterParaformerV2Config(
+                input_dim=80,
+                vocab_size=tokenizer.vocab_size,
+                encoder_dim=96,
+                decoder_dim=96,
+                encoder_layers=3,
+                decoder_layers=2,
+                encoder_ff_dim=384,
+                decoder_ff_dim=384,
+                attention_heads=4,
+                dropout=0.1,
+            )
+        else:
+            config = BetterParaformerV2Config.from_variant(
+                args.model_variant,
+                input_dim=80,
+                vocab_size=tokenizer.vocab_size,
+                dropout=0.1,
+            )
         model = BetterParaformerV2(config).to(device)
     else:
-        config = ParaformerV2Config(
-            input_dim=80,
-            vocab_size=tokenizer.vocab_size,
-            encoder_dim=96,
-            decoder_dim=96,
-            encoder_layers=3,
-            decoder_layers=2,
-            encoder_ff_dim=384,
-            decoder_ff_dim=384,
-            attention_heads=4,
-            dropout=0.1,
-        )
+        if args.model_variant == "tiny":
+            config = ParaformerV2Config(
+                input_dim=80,
+                vocab_size=tokenizer.vocab_size,
+                encoder_dim=96,
+                decoder_dim=96,
+                encoder_layers=3,
+                decoder_layers=2,
+                encoder_ff_dim=384,
+                decoder_ff_dim=384,
+                attention_heads=4,
+                dropout=0.1,
+            )
+        else:
+            config = ParaformerV2Config.from_variant(
+                args.model_variant,
+                input_dim=80,
+                vocab_size=tokenizer.vocab_size,
+                dropout=0.1,
+            )
         model = ParaformerV2(config).to(device)
     model, resolved_compile = compile_model(model, args.torch_compile)
     optimizer = torch.optim.AdamW(model.parameters(), lr=2e-4, weight_decay=1e-2)

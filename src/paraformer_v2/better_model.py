@@ -24,6 +24,26 @@ class BetterParaformerV2Config(ParaformerV2Config):
     confidence_threshold: float = 0.55
     low_confidence_threshold: float = 0.7
 
+    @classmethod
+    def from_variant(cls, variant: str, **overrides: int | float | None) -> "BetterParaformerV2Config":
+        base = ParaformerV2Config.from_variant(variant)
+        config = {
+            "input_dim": base.input_dim,
+            "vocab_size": base.vocab_size,
+            "encoder_dim": base.encoder_dim,
+            "decoder_dim": base.decoder_dim,
+            "encoder_layers": base.encoder_layers,
+            "decoder_layers": base.decoder_layers,
+            "encoder_ff_dim": base.encoder_ff_dim,
+            "decoder_ff_dim": base.decoder_ff_dim,
+            "attention_heads": base.attention_heads,
+            "conv_kernel_size": base.conv_kernel_size,
+            "dropout": base.dropout,
+            "blank_id": base.blank_id,
+        }
+        config.update({key: value for key, value in overrides.items() if value is not None})
+        return cls(**config)
+
 
 class MultiResolutionConformerEncoder(nn.Module):
     def __init__(self, config: BetterParaformerV2Config) -> None:
