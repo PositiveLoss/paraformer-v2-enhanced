@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import subprocess
 import time
 from dataclasses import asdict
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import jiwer
+import sentencepiece as spm
 import torch
 import torchaudio
 from torch.nn.utils.rnn import pad_sequence
@@ -25,6 +26,93 @@ from paraformer_v2 import (
 VOCAB = " abcdefghijklmnopqrstuvwxyz'"
 CHAR_TO_ID = {ch: i for i, ch in enumerate(VOCAB)}
 ID_TO_CHAR = {i: ch for ch, i in CHAR_TO_ID.items()}
+
+
+class TextTokenizer:
+    def encode(self, text: str) -> list[int]:
+        raise NotImplementedError
+
+    def decode(self, ids: list[int]) -> str:
+        raise NotImplementedError
+
+    @property
+    def vocab_size(self) -> int:
+        raise NotImplementedError
+
+    def info(self) -> dict[str, object]:
+        return {"type": "unknown"}
+
+
+class CharTokenizer(TextTokenizer):
+    def encode(self, text: str) -> list[int]:
+        return [CHAR_TO_ID[ch] for ch in text]
+
+    def decode(self, ids: list[int]) -> str:
+        return "".join(ID_TO_CHAR[i] for i in ids if i in ID_TO_CHAR).strip()
+
+    @property
+    def vocab_size(self) -> int:
+        return len(VOCAB)
+
+    def info(self) -> dict[str, object]:
+        return {"type": "char", "vocab_size": self.vocab_size}
+
+
+class SentencePieceTokenizer(TextTokenizer):
+    def __init__(
+        self,
+        texts: list[str],
+        vocab_size: int,
+        model_type: str,
+        model_prefix: Path | None,
+    ) -> None:
+        if not texts:
+            raise RuntimeError("Cannot train SentencePiece tokenizer without texts.")
+        self._tempdir: TemporaryDirectory[str] | None = None
+        if model_prefix is None:
+            self._tempdir = TemporaryDirectory(prefix="librispeech_probe_spm_")
+            prefix = Path(self._tempdir.name) / "tokenizer"
+        else:
+            prefix = model_prefix
+            prefix.parent.mkdir(parents=True, exist_ok=True)
+        training_input = prefix.parent / f"{prefix.name}_training.txt"
+        training_input.write_text("\n".join(texts) + "\n", encoding="utf-8")
+        spm.SentencePieceTrainer.train(
+            input=str(training_input),
+            model_prefix=str(prefix),
+            vocab_size=vocab_size,
+            model_type=model_type,
+            character_coverage=1.0,
+            bos_id=-1,
+            eos_id=-1,
+            pad_id=-1,
+            unk_piece="<unk>",
+            hard_vocab_limit=False,
+            train_extremely_large_corpus=False,
+            shuffle_input_sentence=False,
+            normalization_rule_name="identity",
+        )
+        self.model_path = prefix.with_suffix(".model")
+        self.processor = spm.SentencePieceProcessor(model_file=str(self.model_path))
+
+    def encode(self, text: str) -> list[int]:
+        return list(self.processor.encode(text, out_type=int))
+
+    def decode(self, ids: list[int]) -> str:
+        if not ids:
+            return ""
+        return self.processor.decode(ids).strip()
+
+    @property
+    def vocab_size(self) -> int:
+        return int(self.processor.vocab_size())
+
+    def info(self) -> dict[str, object]:
+        return {
+            "type": "sentencepiece",
+            "vocab_size": self.vocab_size,
+            "model_path": str(self.model_path),
+        }
 
 
 class TinyLibriSpeech(Dataset):
@@ -106,14 +194,6 @@ def normalize_text(text: str) -> str:
     return "".join(ch for ch in lowered if ch in CHAR_TO_ID).strip()
 
 
-def encode_text(text: str) -> torch.Tensor:
-    return torch.tensor([CHAR_TO_ID[ch] for ch in text], dtype=torch.long)
-
-
-def decode_ids(ids: list[int]) -> str:
-    return "".join(ID_TO_CHAR[i] for i in ids if i in ID_TO_CHAR).strip()
-
-
 def greedy_ctc_decode(frame_ids: torch.Tensor, blank_id: int) -> list[int]:
     out = []
     last = None
@@ -145,13 +225,13 @@ class FeatureExtractor:
         return torch.log(mel.clamp_min(1e-5))
 
 
-def make_collate() -> callable:
+def make_collate(tokenizer: TextTokenizer) -> callable:
     extractor = FeatureExtractor()
 
     def collate(batch: list[tuple[torch.Tensor, int, str]]) -> dict[str, torch.Tensor | list[str]]:
         features = [extractor(waveform, sample_rate) for waveform, sample_rate, _ in batch]
         texts = [text for _, _, text in batch]
-        targets = [encode_text(text) for text in texts]
+        targets = [torch.tensor(tokenizer.encode(text), dtype=torch.long) for text in texts]
         return {
             "features": pad_sequence(features, batch_first=True),
             "feature_lengths": torch.tensor([feat.size(0) for feat in features], dtype=torch.long),
@@ -163,7 +243,12 @@ def make_collate() -> callable:
     return collate
 
 
-def evaluate(model: ParaformerV2, loader: DataLoader, device: torch.device) -> dict[str, float | list[dict[str, str]]]:
+def evaluate(
+    model: ParaformerV2,
+    loader: DataLoader,
+    device: torch.device,
+    tokenizer: TextTokenizer,
+) -> dict[str, float | list[dict[str, str]]]:
     model.eval()
     refs: list[str] = []
     ctc_hyps: list[str] = []
@@ -181,10 +266,10 @@ def evaluate(model: ParaformerV2, loader: DataLoader, device: torch.device) -> d
             encoder_lengths = out["encoder_lengths"].cpu()
             for i, ref in enumerate(batch["texts"]):
                 refs.append(ref)
-                ctc_text = decode_ids(
+                ctc_text = tokenizer.decode(
                     greedy_ctc_decode(ctc_ids[i, : encoder_lengths[i]], blank_id)
                 )
-                dec_text = decode_ids(decoder_ids[i, : query_lengths[i]].tolist())
+                dec_text = tokenizer.decode(decoder_ids[i, : query_lengths[i]].tolist())
                 ctc_hyps.append(ctc_text)
                 dec_hyps.append(dec_text)
                 if len(examples) < 5:
@@ -211,6 +296,10 @@ def main() -> None:
     parser.add_argument("--alignment-mode", choices=["viterbi", "uniform"], default="viterbi")
     parser.add_argument("--alignment-backend", choices=["auto", "python", "cython", "triton"], default="auto")
     parser.add_argument("--architecture", choices=["baseline", "better"], default="baseline")
+    parser.add_argument("--tokenizer", choices=["char", "sentencepiece"], default="char")
+    parser.add_argument("--sentencepiece-vocab-size", type=int, default=48)
+    parser.add_argument("--sentencepiece-model-type", choices=["unigram", "bpe"], default="bpe")
+    parser.add_argument("--sentencepiece-prefix", type=Path, default=None)
     parser.add_argument("--eval-on-train", action="store_true")
     parser.add_argument("--progress-every", type=int, default=10)
     parser.add_argument("--seed", type=int, default=13)
@@ -238,14 +327,25 @@ def main() -> None:
     if len(eval_set) == 0:
         eval_set = train_set
 
-    loader_kwargs = {"batch_size": args.batch_size, "collate_fn": make_collate()}
+    train_texts = [dataset[index][2] for index in train_set.indices]
+    if args.tokenizer == "sentencepiece":
+        tokenizer: TextTokenizer = SentencePieceTokenizer(
+            train_texts,
+            args.sentencepiece_vocab_size,
+            args.sentencepiece_model_type,
+            args.sentencepiece_prefix,
+        )
+    else:
+        tokenizer = CharTokenizer()
+
+    loader_kwargs = {"batch_size": args.batch_size, "collate_fn": make_collate(tokenizer)}
     train_loader = DataLoader(train_set, shuffle=True, **loader_kwargs)
     eval_loader = DataLoader(train_set if args.eval_on_train else eval_set, shuffle=False, **loader_kwargs)
 
     if args.architecture == "better":
         config = BetterParaformerV2Config(
             input_dim=80,
-            vocab_size=len(VOCAB),
+            vocab_size=tokenizer.vocab_size,
             encoder_dim=96,
             decoder_dim=96,
             encoder_layers=3,
@@ -259,7 +359,7 @@ def main() -> None:
     else:
         config = ParaformerV2Config(
             input_dim=80,
-            vocab_size=len(VOCAB),
+            vocab_size=tokenizer.vocab_size,
             encoder_dim=96,
             decoder_dim=96,
             encoder_layers=3,
@@ -314,7 +414,7 @@ def main() -> None:
         if time.time() - started > args.time_cap_seconds:
             break
 
-    metrics = evaluate(model, eval_loader, device)
+    metrics = evaluate(model, eval_loader, device, tokenizer)
     result = {
         "probe": "tiny-librispeech",
         "url": args.url,
@@ -325,6 +425,7 @@ def main() -> None:
         "epochs_requested": args.epochs,
         "updates": len(history),
         "architecture": args.architecture,
+        "tokenizer": tokenizer.info(),
         "alignment_mode": args.alignment_mode,
         "alignment_backend": args.alignment_backend,
         "eval_on_train": args.eval_on_train,

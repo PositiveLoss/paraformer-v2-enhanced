@@ -1,0 +1,92 @@
+{
+  "probe": "tiny-librispeech",
+  "url": "dev-clean",
+  "device": "cuda",
+  "dataset_size": 8,
+  "train_size": 6,
+  "eval_size": 2,
+  "epochs_requested": 1,
+  "updates": 3,
+  "architecture": "baseline",
+  "tokenizer": {
+    "type": "sentencepiece",
+    "vocab_size": 48,
+    "model_path": "/tmp/librispeech_probe_spm_0xquhnfi/tokenizer.model"
+  },
+  "alignment_mode": "uniform",
+  "alignment_backend": "auto",
+  "eval_on_train": true,
+  "seed": 13,
+  "elapsed_seconds": 3.963,
+  "config": {
+    "input_dim": 80,
+    "vocab_size": 48,
+    "encoder_dim": 96,
+    "decoder_dim": 96,
+    "encoder_layers": 3,
+    "decoder_layers": 2,
+    "encoder_ff_dim": 384,
+    "decoder_ff_dim": 384,
+    "attention_heads": 4,
+    "conv_kernel_size": 15,
+    "dropout": 0.1,
+    "blank_id": null
+  },
+  "history_tail": [
+    {
+      "epoch": 0,
+      "step": 0,
+      "loss": 29.385780334472656,
+      "ctc_loss": 25.39579200744629,
+      "ce_loss": 3.989987850189209
+    },
+    {
+      "epoch": 0,
+      "step": 1,
+      "loss": 13.715859413146973,
+      "ctc_loss": 9.911026000976562,
+      "ce_loss": 3.804833173751831
+    },
+    {
+      "epoch": 0,
+      "step": 2,
+      "loss": 12.302459716796875,
+      "ctc_loss": 8.522567749023438,
+      "ce_loss": 3.7798924446105957
+    }
+  ],
+  "metrics": {
+    "ctc_wer": 1.0,
+    "decoder_wer": 1.0,
+    "ctc_cer": 0.9504132231404959,
+    "decoder_cer": 1.0,
+    "examples": [
+      {
+        "ref": "he doesn't work at all",
+        "ctc": "t",
+        "decoder": ""
+      },
+      {
+        "ref": "not exactly returned kaliko",
+        "ctc": "t",
+        "decoder": ""
+      },
+      {
+        "ref": "where is that",
+        "ctc": "t",
+        "decoder": ""
+      },
+      {
+        "ref": "where is my brother now",
+        "ctc": "t",
+        "decoder": ""
+      },
+      {
+        "ref": "by harry quilter m a",
+        "ctc": "t",
+        "decoder": ""
+      }
+    ]
+  },
+  "interpretation": "Tiny probe only. Use it to catch pipeline failures and rough loss/decoding behavior; do not compare these metrics to paper-scale LibriSpeech results."
+}
