@@ -136,3 +136,30 @@ the decoder's dependence on brittle greedy CTC boundaries:
 
 These changes are narrow enough to test as ablations against the current
 implementation.
+
+### Baseline vs Better Complexity
+
+With the same tiny LibriSpeech probe configuration (`encoder_dim=96`,
+`decoder_dim=96`, `encoder_layers=3`, `decoder_layers=2`), the current baseline
+and the implemented "better" variant differ as follows:
+
+| Architecture | Parameters | Main extra components beyond shared encoder | Relative train-step cost |
+| --- | ---: | --- | ---: |
+| Baseline Paraformer-v2 | 1,224,153 | one CTC head, one posterior projection, one decoder pass | 1.00x |
+| Better follow-up variant | 1,403,731 | shallow + final CTC heads, boundary head, richer query projection, one extra refinement decoder pass | 2.40x |
+
+Measured train-step cost comes from a small synthetic CUDA benchmark in this
+workspace using the same model dimensions as the probe config.
+
+The better model is slower even though parameter growth is only about `14.7%`
+because runtime is driven more by *where* the extra computation sits than by
+parameter count alone. The encoder is unchanged, but the better variant adds:
+
+- an extra frame-level CTC head
+- a boundary prediction head over all encoder frames
+- more expensive confidence-gated multi-resolution query construction
+- a second decoder-style refinement pass over the compressed token queries
+- extra training losses (`shallow_ctc_loss` and `boundary_loss`)
+
+That means the model does noticeably more sequence-time work, especially in the
+post-CTC path, so wall-clock time grows much more than raw parameter count.
